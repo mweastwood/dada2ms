@@ -21,6 +21,7 @@ struct options {
 	bool addSPW;       // Add a new SPW/DATA_DESC
 	bool applyCal;     // Apply existing calibrations during conversion
 	bool antsAreITRF;  // Antenna positions are ITRF (default is relative to array position)
+    bool oneSPW;       // Concatenate all the dada files together so that only one spectral window is created
 
 	int dataDescID;
 	int startScan;

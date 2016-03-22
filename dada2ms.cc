@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <vector>
 #include <complex>
+#include <memory>
 
 // casacore headers
 #include <casa/Arrays.h>
@@ -37,6 +38,9 @@
 #include "ms_funcs.h"
 #include "MSUVWGenerator.h"
 
+#include <iostream>
+using namespace std;
+
 using namespace casa;
 
 int
@@ -44,18 +48,36 @@ main(int argc, char *argv[])
 {
 	dada2ms::options opts(argc, argv);
 
+    std::vector<std::shared_ptr<dada::SortedDada> > dadas;
+    for (int i = 0; i < opts.dadaFile.size(); ++i) {
+        std::shared_ptr<dada::SortedDada> ptr(new dada::SortedDada(opts.dadaFile[i].c_str()));
+        dadas.push_back(ptr);
+    }
+    std::shared_ptr<dada::SortedDada> dada = dadas[0];
+
     // Assigning to local variables to make code below more readable
-    dada::SortedDada dada(opts.dadaFile[0].c_str());
-    const int nAnt = dada.header.nAnt();
-    int nTime = dada.header.nTime();
-    const int nFreq = dada.header.nFreq();
-    const int nCorr = dada.header.nCorr();
-    const double intTime = dada.header.intTime(); // Integration time
-    const double cFreq = dada.header.cFreq();     // Center frequency
-    const double bw = dada.header.bandwidth();    // Bandwidth
-    const double startTime = dada.header.startTimeMJD();
-    const double finishTime = dada.header.finishTimeMJD();
-    const int nBaseline = dada.header.nBaseline(); // Including autocorrelations
+    const int nAnt = dada->header.nAnt();
+    int nTime = dada->header.nTime();
+    int nFreq = dada->header.nFreq();
+    const int nCorr = dada->header.nCorr();
+    const double intTime = dada->header.intTime(); // Integration time
+    double cFreq = dada->header.cFreq();     // Center frequency
+    double bw = dada->header.bandwidth();    // Bandwidth
+    const double startTime = dada->header.startTimeMJD();
+    const double finishTime = dada->header.finishTimeMJD();
+    const int nBaseline = dada->header.nBaseline(); // Including autocorrelations
+
+    if (opts.oneSPW) {
+        // sum the number of frequency channels
+        // average the center frequency (valid if subbands are contiguous)
+        // sum the bandwidth
+        for (int i = 1; i < dadas.size(); ++i) {
+            nFreq += dadas[i]->header.nFreq();
+            cFreq += dadas[i]->header.cFreq();
+            bw += dadas[i]->header.bandwidth();
+        }
+        cFreq /= dadas.size();
+    }
 
     if (opts.firstOnly) {
     	nTime = 1;
@@ -147,16 +169,16 @@ main(int argc, char *argv[])
     std::vector<std::complex<float> > gain;
     std::vector<char> calFlag;
     if (opts.applyCal) {
-    	readCalTable(opts.calTable.c_str(), gain, calFlag);
-    	dada.applyGains(gain, calFlag);
+        readCalTable(opts.calTable.c_str(), gain, calFlag);
+        dada->applyGains(gain, calFlag);
     }
 
     if (!opts.remapFile.empty()) {
-        dada.setLineMappingFromFile(opts.remapFile.c_str());
+        dada->setLineMappingFromFile(opts.remapFile.c_str());
     }
 
     // We need to keep two copies of the flags due to the different storage (Bool vs char)
-    std::vector<char> &charFlags = dada.rCurrentVisFlags();
+    std::vector<char> &charFlags = dada->rCurrentVisFlags();
     Cube<Bool> flag(nCorr, nFreq, outBaseline, false);
 
     // Arrays common to all integrations
@@ -197,7 +219,26 @@ main(int argc, char *argv[])
     	Vector<Int> scanVals(outBaseline, firstScan + i);
 
     	ms.addRow(outBaseline);
-    	Array<Complex> data(IPosition(3, nCorr, nFreq, outBaseline), dada.rGetChunk(t).data(), SHARE);
+        Array<Complex> data;
+        if (opts.oneSPW) {
+            // Note to Michael: the 3 indicates the number of dimensions in the array
+            // (it is not the size of a 4th dimension)
+            data = Array<Complex>(IPosition(3, nCorr, nFreq, outBaseline));
+            int offset = 0;
+            for (int d = 0; d < dadas.size(); ++d) {
+                Array<Complex> mydata(IPosition(3, nCorr, dadas[d]->header.nFreq(), outBaseline), dadas[d]->rGetChunk(t).data(), SHARE);
+                for (int baseline = 0; baseline < outBaseline; ++baseline) {
+                    for (int freq = 0; freq < dadas[d]->header.nFreq(); ++freq) {
+                        for (int corr = 0; corr < nCorr; ++corr) {
+                            data(IPosition(3, corr, offset + freq, baseline)) = mydata(IPosition(3, corr, freq, baseline));
+                        }
+                    }
+                }
+                offset += dadas[d]->header.nFreq();
+            }
+        } else {
+            data = Array<Complex>(IPosition(3, nCorr, nFreq, outBaseline), dada->rGetChunk(t).data(), SHARE);
+        }
     	if (opts.applyCal) {
     		charVector2boolArray(charFlags, flag);
     	}

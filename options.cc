@@ -24,6 +24,7 @@ options::options(int argc, char *argv[]) :
     addSPW(false),
     applyCal(false),
     antsAreITRF(false),
+    oneSPW(false),
     dataDescID(0),
     startScan(1),
     configFile(default_config_file)
@@ -42,6 +43,7 @@ options::options(int argc, char *argv[]) :
                   "Otherwise J2000 is used.")
         ("wtspec", po::bool_switch(&addWtSpec), "create a WEIGHT_SPECTRUM column.")
         ("addspw", po::bool_switch(&addSPW), "create and use a new SPW for these data. Only used with --append.")
+        ("onespw", po::bool_switch(&oneSPW), "concatenate all the dada files together so that only one SPW is created.")
         ("ddid", po::value<int>(&dataDescID), "use the specified pre-existing DATA_DESC_ID for these data. Only used with --append. Overridden by --addSPW. Default: 0")
         ("startscan", po::value<int>(&startScan), "use this value as the first scan/field value. Default: 1")
     ;
