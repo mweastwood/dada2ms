@@ -59,6 +59,7 @@ main(int argc, char *argv[])
     const int nAnt = dada->header.nAnt();
     int nTime = dada->header.nTime();
     int nFreq = dada->header.nFreq();
+    const int nPol = dada->header.nPol();
     const int nCorr = dada->header.nCorr();
     const double intTime = dada->header.intTime(); // Integration time
     double cFreq = dada->header.cFreq();     // Center frequency
@@ -170,7 +171,27 @@ main(int argc, char *argv[])
     std::vector<char> calFlag;
     if (opts.applyCal) {
         readCalTable(opts.calTable.c_str(), gain, calFlag);
-        dada->applyGains(gain, calFlag);
+        if (opts.oneSPW) {
+            int offset = 0;
+            for (int d = 0; d < dadas.size(); ++d) {
+                std::vector<std::complex<float> > mygain;
+                std::vector<char> mycalFlag;
+                for (int antenna = 0; antenna < nAnt; ++antenna) {
+                    for (int freq = 0; freq < dadas[d]->header.nFreq(); ++freq) {
+                        for (int pol = 0; pol < nPol; ++pol) {
+                            int idx = antenna*nFreq*nPol + (freq+offset)*nPol + pol;
+                            int myidx = antenna*dadas[d]->header.nFreq()*nPol + freq*nPol + pol;
+                            mygain[myidx] = gain[idx];
+                            mycalFlag[myidx] = calFlag[idx];
+                        }
+                    }
+                }
+                offset += dadas[d]->header.nFreq();
+                dadas[d]->applyGains(mygain, mycalFlag);
+            }
+        } else {
+            dada->applyGains(gain, calFlag);
+        }
     }
 
     if (!opts.remapFile.empty()) {
