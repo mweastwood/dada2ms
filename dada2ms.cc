@@ -174,19 +174,20 @@ main(int argc, char *argv[])
         if (opts.oneSPW) {
             int offset = 0;
             for (int d = 0; d < dadas.size(); ++d) {
-                std::vector<std::complex<float> > mygain;
-                std::vector<char> mycalFlag;
+                int mynFreq = dadas[d]->header.nFreq();
+                std::vector<std::complex<float> > mygain(nAnt*mynFreq*nPol);
+                std::vector<char> mycalFlag(nAnt*mynFreq*nPol);
                 for (int antenna = 0; antenna < nAnt; ++antenna) {
-                    for (int freq = 0; freq < dadas[d]->header.nFreq(); ++freq) {
+                    for (int freq = 0; freq < mynFreq; ++freq) {
                         for (int pol = 0; pol < nPol; ++pol) {
                             int idx = antenna*nFreq*nPol + (freq+offset)*nPol + pol;
-                            int myidx = antenna*dadas[d]->header.nFreq()*nPol + freq*nPol + pol;
+                            int myidx = antenna*mynFreq*nPol + freq*nPol + pol;
                             mygain[myidx] = gain[idx];
                             mycalFlag[myidx] = calFlag[idx];
                         }
                     }
                 }
-                offset += dadas[d]->header.nFreq();
+                offset += mynFreq;
                 dadas[d]->applyGains(mygain, mycalFlag);
             }
         } else {
@@ -198,8 +199,6 @@ main(int argc, char *argv[])
         dada->setLineMappingFromFile(opts.remapFile.c_str());
     }
 
-    // We need to keep two copies of the flags due to the different storage (Bool vs char)
-    std::vector<char> &charFlags = dada->rCurrentVisFlags();
     Cube<Bool> flag(nCorr, nFreq, outBaseline, false);
 
     // Arrays common to all integrations
@@ -247,22 +246,27 @@ main(int argc, char *argv[])
             data = Array<Complex>(IPosition(3, nCorr, nFreq, outBaseline));
             int offset = 0;
             for (int d = 0; d < dadas.size(); ++d) {
-                Array<Complex> mydata(IPosition(3, nCorr, dadas[d]->header.nFreq(), outBaseline), dadas[d]->rGetChunk(t).data(), SHARE);
+                int mynFreq = dadas[d]->header.nFreq();
+                Array<Complex> mydata(IPosition(3, nCorr, mynFreq, outBaseline), dadas[d]->rGetChunk(t).data(), SHARE);
+                std::vector<char> mycharFlags = dadas[d]->rCurrentVisFlags();
                 for (int baseline = 0; baseline < outBaseline; ++baseline) {
-                    for (int freq = 0; freq < dadas[d]->header.nFreq(); ++freq) {
+                    for (int freq = 0; freq < mynFreq; ++freq) {
                         for (int corr = 0; corr < nCorr; ++corr) {
+                            int idx = baseline*mynFreq*nCorr + freq*nCorr + corr;
                             data(IPosition(3, corr, offset + freq, baseline)) = mydata(IPosition(3, corr, freq, baseline));
+                            flag(IPosition(3, corr, offset + freq, baseline)) = static_cast<bool>(mycharFlags[idx]);
                         }
                     }
                 }
-                offset += dadas[d]->header.nFreq();
+                offset += mynFreq;
             }
         } else {
             data = Array<Complex>(IPosition(3, nCorr, nFreq, outBaseline), dada->rGetChunk(t).data(), SHARE);
+            if (opts.applyCal) {
+                std::vector<char> charFlags = dada->rCurrentVisFlags();
+                charVector2boolArray(charFlags, flag);
+            }
         }
-    	if (opts.applyCal) {
-    		charVector2boolArray(charFlags, flag);
-    	}
         // Create a Slicer for the current integration
         IPosition currIntStart(1, preexistingRows + i*outBaseline);
         IPosition currIntLength(1,outBaseline);

@@ -475,7 +475,7 @@ void
 charVector2boolArray(std::vector<char> &charVec, Array<Bool> &boolArr)
 {
 	if (boolArr.shape().product() != charVec.size())
-		throw std::length_error("array length mismatch in ms_funcs::boolArray2charVector()");
+		throw std::length_error("array length mismatch in ms_funcs::charVector2boolArray()");
 	int i = 0;
 	for (Array<Bool>::iterator iter=boolArr.begin(); iter != boolArr.end(); ++iter)
 		*iter = static_cast<Bool>(charVec[i++]);
